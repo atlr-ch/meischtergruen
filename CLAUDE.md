@@ -52,7 +52,3 @@ Single file: `meischtergruen.py` with four sections:
 ## CI/CD
 
 GitHub Actions workflow (`.github/workflows/docker.yml`) builds and pushes to `ghcr.io` on pushes to main. Image is private — NAS pulls with a classic PAT (`read:packages`).
-
-## Deployment
-
-Deployed on TrueNAS via the `nas` repo. Stack file: `apps/tools.yml` (service `meischtergruen`). Secrets in `apps/.secrets.yml` (`MEISCHTERGRUEN_CALENDAR_ID`). Credentials at `/mnt/ssd/apps/meischtergruen/credentials/service-account.json`.
