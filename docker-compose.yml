@@ -1,0 +1,8 @@
+services:
+  meischtergruen:
+    build: .
+    container_name: meischtergruen
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./credentials:/credentials:ro
