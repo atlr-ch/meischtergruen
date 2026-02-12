@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import time
-from datetime import datetime, date, timezone
+from datetime import date
 
 import requests
 import schedule
@@ -94,7 +94,7 @@ def get_calendar_service():
 
 def clear_future_events(service, calendar_id: str):
     """Delete all future events from the calendar."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = date.today().isoformat() + "T00:00:00Z"
     log.info("Clearing future events...")
 
     page_token = None
