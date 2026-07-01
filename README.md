@@ -39,3 +39,7 @@ docker compose up --build
 6. Share the calendar with the service account email (grant **Make changes to events**)
 7. Copy the **Calendar ID** from the calendar's settings (Integrate calendar section)
 
+
+## License
+
+This project is licensed under the [WTFPL](LICENSE) — do what the fuck you want to.
