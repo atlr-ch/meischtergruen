@@ -27,10 +27,17 @@ EVENT_DESCRIPTION = os.environ.get("EVENT_DESCRIPTION", "")
 SCHEDULE_CRON = os.environ.get("SCHEDULE_CRON", "friday")
 RUN_ON_STARTUP = os.environ.get("RUN_ON_STARTUP", "true").lower() == "true"
 
+# Plan names → API type codes, as used by mr-green.ch/pages/abholtermine
 SUBSCRIPTION_MAP = {
-    "Home Plus": "Biweekly",
-    "Home Light": "Monthly",
-    "Office Plus": "Weekly",
+    "Home Light": "monthly",
+    "Home Smart": "monthly",
+    "Home Basic": "biweekly",
+    "Home Plus": "biweekly",
+    "Pinkbag": "monthly",
+    "Office Light": "monthly",
+    "Office Basic": "biweekly",
+    "Office Medium": "biweekly",
+    "Office Plus": "weekly",
 }
 
 GERMAN_MONTHS = {
@@ -39,7 +46,9 @@ GERMAN_MONTHS = {
     "September": 9, "Oktober": 10, "November": 11, "Dezember": 12,
 }
 
-MR_GREEN_API_URL = "https://api.mr-green.ch/api/get-pickup-dates-new-main"
+# Mr. Green shut down api.mr-green.ch (July 2026); this is the endpoint the
+# Shopify site's Abholtermine page calls.
+MR_GREEN_API_URL = "https://api-service.mr-green.ch/api/system/pickup-dates"
 
 
 def parse_german_date(date_str: str) -> date:
@@ -60,20 +69,22 @@ def fetch_pickup_dates(zip_code: str, subscription: str) -> list[date]:
     api_type = SUBSCRIPTION_MAP.get(subscription, subscription)
     log.info(f"Fetching dates for ZIP {zip_code}, type '{api_type}'")
 
+    # The site sends zip/type both as query params and form body; mirror that.
     response = requests.post(
         MR_GREEN_API_URL,
-        json={"zip": int(zip_code), "type": api_type},
+        params={"zip": zip_code, "type": api_type},
+        data={"zip": zip_code, "type": api_type},
         timeout=30,
     )
     response.raise_for_status()
     data = response.json()
 
     if not data.get("success"):
-        raise ValueError(f"API returned success=false: {data.get('msg', 'unknown error')}")
+        raise ValueError(f"API returned success=false: {data.get('message', 'unknown error')}")
 
-    dates_data = data.get("dates_data", [])
+    dates_data = data.get("data", [])
     if not dates_data:
-        raise ValueError("API returned empty dates_data")
+        raise ValueError("API returned empty data")
 
     raw_dates = dates_data[0].get("date", [])
     town = dates_data[0].get("town", "unknown")
