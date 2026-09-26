@@ -1,6 +1,6 @@
 # Meischtergruen
 
-Syncs [Mr. Green](https://mr-green.ch) recycling pickup dates to Google Calendar.
+Syncs [Mr. Green](https://mr-green.ch) recycling pickup dates to Google Calendar and/or any CalDAV calendar (e.g. Nextcloud).
 
 Runs as a Docker container — fetches pickup dates on startup and weekly, creates all-day calendar events with a 6-hour reminder.
 
@@ -19,15 +19,26 @@ docker compose up --build
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GOOGLE_CALENDAR_ID` | **yes** | - | Target calendar ID (`abc@group.calendar.google.com`) |
+| `GOOGLE_CALENDAR_ID` | one of these two | - | Google calendar ID (`abc@group.calendar.google.com`) |
+| `CALDAV_URL` | one of these two | - | Full URL of a CalDAV calendar, e.g. `https://cloud.example.com/remote.php/dav/calendars/<user>/<calendar>/` |
+| `CALDAV_USERNAME` | with `CALDAV_URL` | - | CalDAV username |
+| `CALDAV_PASSWORD` | with `CALDAV_URL` | - | CalDAV password (for Nextcloud, an app password) |
 | `MR_GREEN_ZIP` | no | `8004` | Zip code for pickup dates |
-| `MR_GREEN_SUBSCRIPTION` | no | `Home Plus` | `Home Plus`, `Home Light`, or `Office Plus` |
+| `MR_GREEN_SUBSCRIPTION` | no | `Home Plus` | `Home Light`, `Home Smart`, `Home Basic`, `Home Plus`, `Pinkbag`, `Office Light`, `Office Basic`, `Office Medium`, or `Office Plus` |
 | `GOOGLE_CREDENTIALS_FILE` | no | `/credentials/service-account.json` | Path to service account JSON |
 | `EVENT_TITLE` | no | `Mr. Green Pickup` | Calendar event title |
 | `EVENT_LOCATION` | no | | Calendar event location |
 | `EVENT_DESCRIPTION` | no | | Calendar event description |
 | `SCHEDULE_CRON` | no | `friday` | Day of week, `daily`, or `HH:MM` for daily at specific time |
 | `RUN_ON_STARTUP` | no | `true` | Run sync immediately on container start |
+
+Each calendar target is optional and syncs independently — set either or both. Use a dedicated calendar for each: every sync deletes all future events in it before recreating them.
+
+## Nextcloud Setup
+
+1. In Nextcloud Calendar, create a new calendar (e.g. "Mr. Green")
+2. From the calendar's **⋯ > Copy internal link**, take the CalDAV URL (`…/remote.php/dav/calendars/<user>/<calendar>/`) and set it as `CALDAV_URL` — not the public share link, which is read-only
+3. Under **Settings > Security > Devices & sessions**, create an app password and set it as `CALDAV_PASSWORD`
 
 ## Google Cloud Setup
 

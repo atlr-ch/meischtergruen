@@ -2,8 +2,10 @@ import os
 import sys
 import logging
 import time
-from datetime import date
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
+import caldav
 import requests
 import schedule
 from google.oauth2 import service_account
@@ -19,13 +21,20 @@ log = logging.getLogger("meischtergruen")
 # Configuration
 MR_GREEN_ZIP = os.environ.get("MR_GREEN_ZIP", "8004")
 MR_GREEN_SUBSCRIPTION = os.environ.get("MR_GREEN_SUBSCRIPTION", "Home Plus")
-GOOGLE_CALENDAR_ID = os.environ["GOOGLE_CALENDAR_ID"]  # Required
+GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "")
 CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "/credentials/service-account.json")
 EVENT_TITLE = os.environ.get("EVENT_TITLE", "Mr. Green Pickup")
 EVENT_LOCATION = os.environ.get("EVENT_LOCATION", "")
 EVENT_DESCRIPTION = os.environ.get("EVENT_DESCRIPTION", "")
 SCHEDULE_CRON = os.environ.get("SCHEDULE_CRON", "friday")
 RUN_ON_STARTUP = os.environ.get("RUN_ON_STARTUP", "true").lower() == "true"
+# CalDAV (e.g. Nextcloud): full URL of a dedicated calendar
+CALDAV_URL = os.environ.get("CALDAV_URL", "")
+CALDAV_USERNAME = os.environ.get("CALDAV_USERNAME", "")
+CALDAV_PASSWORD = os.environ.get("CALDAV_PASSWORD", "")
+
+if not GOOGLE_CALENDAR_ID and not CALDAV_URL:
+    sys.exit("Set GOOGLE_CALENDAR_ID and/or CALDAV_URL")
 
 # Plan names → API type codes, as used by mr-green.ch/pages/abholtermine
 SUBSCRIPTION_MAP = {
@@ -158,6 +167,72 @@ def create_pickup_events(service, calendar_id: str, dates: list[date]):
     log.info(f"Created {len(dates)} pickup events")
 
 
+def get_caldav_calendar():
+    """Connect to the CalDAV calendar at CALDAV_URL."""
+    client = caldav.DAVClient(url=CALDAV_URL, username=CALDAV_USERNAME, password=CALDAV_PASSWORD)
+    return client.calendar(url=CALDAV_URL)
+
+
+def clear_future_caldav_events(calendar):
+    """Delete all future events from the CalDAV calendar."""
+    today = date.today()
+    start = datetime(today.year, today.month, today.day)
+    events = calendar.search(start=start, end=start + timedelta(days=5 * 365), event=True)
+    for event in events:
+        event.delete()
+    log.info(f"Deleted {len(events)} future CalDAV events")
+
+
+def ical_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def create_caldav_events(calendar, dates: list[date]):
+    """Create all-day events for each pickup date, mirroring the Google ones."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    for d in dates:
+        lines = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//meischtergruen//EN",
+            "BEGIN:VEVENT",
+            f"UID:{uuid.uuid4()}",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART;VALUE=DATE:{d.strftime('%Y%m%d')}",
+            f"DTEND;VALUE=DATE:{(d + timedelta(days=1)).strftime('%Y%m%d')}",
+            f"SUMMARY:{ical_escape(EVENT_TITLE)}",
+            "TRANSP:TRANSPARENT",
+        ]
+        if EVENT_LOCATION:
+            lines.append(f"LOCATION:{ical_escape(EVENT_LOCATION)}")
+        if EVENT_DESCRIPTION:
+            lines.append(f"DESCRIPTION:{ical_escape(EVENT_DESCRIPTION)}")
+        lines += [
+            "BEGIN:VALARM",
+            "ACTION:DISPLAY",
+            f"DESCRIPTION:{ical_escape(EVENT_TITLE)}",
+            "TRIGGER:-PT6H",
+            "END:VALARM",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+        calendar.save_event("\r\n".join(lines))
+
+    log.info(f"Created {len(dates)} CalDAV pickup events")
+
+
+def sync_google(dates: list[date]):
+    service = get_calendar_service()
+    clear_future_events(service, GOOGLE_CALENDAR_ID)
+    create_pickup_events(service, GOOGLE_CALENDAR_ID, dates)
+
+
+def sync_caldav(dates: list[date]):
+    calendar = get_caldav_calendar()
+    clear_future_caldav_events(calendar)
+    create_caldav_events(calendar, dates)
+
+
 def sync():
     """Fetch dates, clear calendar, create events."""
     try:
@@ -176,20 +251,31 @@ def sync():
             log.warning("No future pickup dates found")
             return
 
-        service = get_calendar_service()
-        clear_future_events(service, GOOGLE_CALENDAR_ID)
-        create_pickup_events(service, GOOGLE_CALENDAR_ID, future_dates)
-
-        log.info(f"=== Sync complete. Next pickup: {future_dates[0].isoformat()} ===")
     except Exception:
         log.exception("Sync failed")
+        return
+
+    # Each target syncs independently so one failing doesn't block the other
+    targets = []
+    if GOOGLE_CALENDAR_ID:
+        targets.append(("Google", sync_google))
+    if CALDAV_URL:
+        targets.append(("CalDAV", sync_caldav))
+    for name, sync_target in targets:
+        try:
+            sync_target(future_dates)
+        except Exception:
+            log.exception(f"{name} sync failed")
+
+    log.info(f"=== Sync complete. Next pickup: {future_dates[0].isoformat()} ===")
 
 
 def main():
     log.info("Mr. Green Calendar Sync")
     log.info(f"  ZIP: {MR_GREEN_ZIP}")
     log.info(f"  Subscription: {MR_GREEN_SUBSCRIPTION}")
-    log.info(f"  Calendar: {GOOGLE_CALENDAR_ID}")
+    log.info(f"  Google calendar: {GOOGLE_CALENDAR_ID or '(disabled)'}")
+    log.info(f"  CalDAV calendar: {CALDAV_URL or '(disabled)'}")
     log.info(f"  Schedule: {SCHEDULE_CRON}")
 
     if RUN_ON_STARTUP:
