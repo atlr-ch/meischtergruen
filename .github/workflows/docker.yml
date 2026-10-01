@@ -36,6 +36,11 @@ jobs:
             type=raw,value=latest
             type=sha
 
+      # The default `docker` driver can't export a build cache; the
+      # docker-container driver this sets up can.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -43,3 +48,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache in the GitHub Actions cache, so the pip install layer is
+          # reused until requirements.txt changes. The Dockerfile is single-stage,
+          # so `mode=max` caches nothing extra today; it keeps intermediate
+          # stages cached if a build stage is ever added.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
